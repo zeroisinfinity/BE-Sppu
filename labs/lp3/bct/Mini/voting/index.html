@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BlockVote - Decentralized E-Voting</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f3f4f6; color: #1f2937; padding-bottom: 40px; }
+    .header { background: #5a32ea; color: white; padding: 24px 40px; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 26px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header p { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .wallet-btn { background: white; color: #5a32ea; border: none; border-radius: 20px; padding: 10px 22px; font-weight: 600; cursor: pointer; }
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    .card { background: white; border-radius: 14px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .stepper { display: flex; justify-content: space-between; position: relative; margin-bottom: 24px; }
+    .step { text-align: center; flex: 1; position: relative; z-index: 1; }
+    .step-circle { width: 32px; height: 32px; border-radius: 50%; background: #e5e7eb; color: #6b7280; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px; font-weight: bold; font-size: 14px; }
+    .step.active .step-circle { background: #5a32ea; color: white; }
+    .step.completed .step-circle { background: #10b981; color: white; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-right: 8px; }
+    .badge-admin { background: #ede9fe; color: #5a32ea; }
+    .badge-voter { background: #e0f2fe; color: #0284c7; }
+    .badge-voted { background: #d1fae5; color: #059669; }
+    .badge-not-voted { background: #fee2e2; color: #dc2626; }
+    .winner-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #b45309; padding: 16px; border-radius: 10px; font-weight: bold; font-size: 18px; text-align: center; margin-bottom: 20px; }
+    .candidates-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 16px; }
+    .candidate-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; text-align: center; position: relative; background: #fff; }
+    .candidate-avatar { width: 44px; height: 44px; border-radius: 50%; background: #5a32ea; color: white; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; margin: 0 auto 10px; }
+    .candidate-name { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    .progress-bar-bg { background: #e5e7eb; height: 8px; border-radius: 4px; overflow: hidden; margin: 12px 0 8px; }
+    .progress-bar-fill { background: #5a32ea; height: 100%; width: 0%; border-radius: 4px; }
+    .btn { border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: #5a32ea; color: white; width: 100%; margin-top: 10px; }
+    .btn-green { background: #10b981; color: white; }
+    .btn-red { background: #ef4444; color: white; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .form-group { display: flex; gap: 12px; margin-bottom: 14px; }
+    .form-input { flex: 1; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+    .winner-badge { position: absolute; top: 12px; right: 12px; background: #f59e0b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: bold; }
+    .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>🗳️ BlockVote</h1>
+      <p>Transparent, tamper-proof voting on the blockchain</p>
+    </div>
+    <button id="connectWalletBtn" class="wallet-btn" onclick="connectWallet()">Connect MetaMask</button>
+  </div>
+
+  <div class="container">
+    <div id="welcomeCard" class="card" style="text-align: center;">
+      <h2 style="margin-bottom: 10px;">Welcome</h2>
+      <p style="color: #6b7280;">Connect your MetaMask wallet to view the election and cast your vote.<br>Each registered wallet can vote only once, and votes cannot be changed.</p>
+    </div>
+
+    <div id="mainDashboard" style="display: none;">
+      <div id="winnerBanner" class="winner-banner" style="display: none;"></div>
+
+      <div class="card">
+        <h3 style="margin-bottom: 16px;">Election Status</h3>
+        <div class="stepper">
+          <div class="step" id="step-0"><div class="step-circle">1</div><div>Registration</div></div>
+          <div class="step" id="step-1"><div class="step-circle">2</div><div>Voting Open</div></div>
+          <div class="step" id="step-2"><div class="step-circle">3</div><div>Ended</div></div>
+        </div>
+        <div>
+          <span id="roleBadge" class="badge"></span>
+          <span id="votedBadge" class="badge"></span>
+        </div>
+        <p id="phaseDescription" style="color: #6b7280; font-size: 14px; margin-top: 10px;"></p>
+      </div>
+
+      <div class="card">
+        <h3>Candidates <span id="totalVotesHeader" style="font-size: 14px; font-weight: normal; color: #6b7280;"></span></h3>
+        <div id="candidatesList" class="candidates-grid"></div>
+      </div>
+
+      <div id="adminPanel" class="card" style="display: none;">
+        <h3 style="margin-bottom: 16px;">⚙️ Admin Panel</h3>
+        <div class="form-group">
+          <input type="text" id="candidateNameInput" class="form-input" placeholder="Candidate name">
+          <button class="btn btn-primary" style="width: auto;" onclick="addCandidate()">Add Candidate</button>
+        </div>
+        <div class="form-group">
+          <input type="text" id="voterAddressInput" class="form-input" placeholder="Voter wallet address (0x...)">
+          <button class="btn btn-primary" style="width: auto;" onclick="registerVoter()">Register Voter</button>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+          <button id="startVotingBtn" class="btn btn-green" onclick="startVoting()">Start Voting</button>
+          <button id="endVotingBtn" class="btn btn-red" onclick="endVoting()">End Voting</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">Built with Solidity · ethers.js · MetaMask</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
